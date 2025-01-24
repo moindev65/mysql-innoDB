@@ -1,82 +1,202 @@
-Installation mysql cluster
-Add MySQL APT Repository
-Note: before installing mysql if you need to set lowercase-table-names value you need to do below command:
+# MySQL InnoDB Cluster Setup
+
+## Introduction
+MySQL Router is a tiny middleware that provides routing between applications and back-end MySQL Servers. It ensures high availability and scalability by directing database traffic to connected MySQL servers.
+
+In this setup, we deploy:
+- 3 MySQL backend nodes
+- 1 MySQL Router node
+
+## Prerequisites
+
+### Server IPs and Hostnames
+
+| IP Address     | Hostname      | Description               |
+|---------------|--------------|---------------------------|
+| 172.40.70.16 | mysql-01     | Primary/Master DB Server |
+| 172.40.70.17 | mysql-02     | Read Only DB Server 1    |
+| 172.40.70.18 | mysql-03     | Read Only DB Server 2    |
+| 172.40.70.18 | mysqlrouter  | MySQL Router             |
+
+## Installation of MySQL Cluster
+
+### Step 1: Add MySQL APT Repository
+Before installing MySQL, set the `lowercase-table-names` value if required:
+
+```sh
 sudo debconf-set-selections <<< "mysql-server mysql-server/lowercase-table-names select Enabled"
-add the MySQL APT repository to your system’s software repository list
+```
+
+Add MySQL APT repository:
+
+```sh
 wget https://dev.mysql.com/get/mysql-apt-config_0.8.32-1_all.deb
-Install the downloaded MySQL apt repository
 sudo dpkg -i mysql-apt-config_0.8.32-1_all.deb
-For download without any issue first, you create a MySQL repo in Nexus. By the below image do it then update the MySQL repo list.
-According to the image setting.
-before install mysql if we want to have option
-Then update all repo URLs in the file located in the path /etc/mysql/mysql.conf.d/mysqld.conf. In addition please replace http://repo.
-mysql.com/apt/ubuntu/ by nexus repo address.
-Update the system package.
+```
+
+### Step 2: Update and Install MySQL Server
+
+Update the system package list:
+
+```sh
 sudo apt-get update
-Install mysql server
+```
+
+Install MySQL Server:
+
+```sh
 apt-get install mysql-server
-Create User
-Login into Database with user name and password
-mysql version
-During the installation there are a couple of questions that show the version of MySQL please select mysql-cluster if exists.
+```
+
+### Step 3: Create a MySQL User
+
+Login into MySQL:
+
+```sh
 mysql -u root -p
-Create the user.
+```
+
+Create a user:
+
+```sql
 CREATE USER 'mno'@'%' IDENTIFIED BY 'mno@123';
-Grant Permission to all databases to connect remotely with admin permission.
 GRANT ALL PRIVILEGES ON *.* TO 'mno'@'%' WITH GRANT OPTION;
-Perform flush-privileges operation to tell the server to reload the grant tables.
 FLUSH PRIVILEGES;
-Open /etc/mysql/mysql.conf.d/mysqld.conf and add bind address
+```
+
+Modify `mysqld.conf`:
+
+```sh
+sudo nano /etc/mysql/mysql.conf.d/mysqld.conf
+```
+
+Add:
+
+```ini
 bind-address = 0.0.0.0
-To take effect, restart MySQL Service.
+```
+
+Restart MySQL:
+
+```sh
 sudo systemctl restart mysql
-MySQL InnoDB Cluster Setup
-To install mysql-shell you install it by binary package please go to the below link and the version you selected to download it. Also,
-you should download mysqlrouter from the below link.
-https://dev.mysql.com/downloads/
-Before creating a cluster, we have to configure the host for InnoDB cluster usage. Run the below command on 3 hosts.
-On mysql-01 Host
-First login to MySQL Shell on MYSQL-IDC-01 instance:
+```
+
+## MySQL InnoDB Cluster Setup
+
+### Install MySQL Shell
+
+Download and install MySQL Shell:
+
+```sh
+wget https://dev.mysql.com/downloads/
 sudo dpkg -i mysql-apt-config_0.8.32-1_all.deb
+```
+
+Login to MySQL Shell:
+
+```sh
 mysqlsh
-Connect to first instance,
+```
+
+Connect to the first MySQL instance:
+
+```sh
 shell.connect('mno@mysql-01:3306')
-Now create a cluster assigning the return value to a variable.
-var cluster =dba.createCluster('MnoCluster')
-Next, add MYSQL02-02 and MYSQL02-02 to ProdCluster. Run the below commands on MYSQL-01
+```
+
+Create a cluster:
+
+```sh
+var cluster = dba.createCluster('MnoCluster')
+```
+
+Add MySQL instances:
+
+```sh
 cluster.addInstance('mno@mysql-02:3306')
 cluster.addInstance('mno@mysql-03:3306')
-Check the Cluster status:
+```
+
+Check cluster status:
+
+```sh
 cluster.status()
-InnoDB Cluster Administration
-1. Get information about the structure of the InnoDB cluster
-Cluster.describe()
-2. To check Primary Master in Group Replication. By Default Group Replication runs on Single Primary Node.
-mysql> SELECT member_host, member_port, member_state, member_role FROM performance_schema.
-replication_group_members;
-Install Mysqlrouter
-First, you show download binary is from this website https://dev.mysql.com/downloads/ after that install it. Moreover, mv downloads
-binary to this path /usr/bin/ and applies the command below on to make it executable.
-chomod +x mysqlrouter
-Deploying /Bootstrapping MySQL Router
-MySQL Router can be deployed using bootstrapping on application instance using the below command, which --user is the owner of
-mysqlrouter service. and -d will create a folder that contain start.sh stop.sh script
+```
+
+## InnoDB Cluster Administration
+
+### Check Cluster Structure
+
+```sh
+cluster.describe()
+```
+
+### Verify Primary Master in Group Replication
+
+```sql
+SELECT member_host, member_port, member_state, member_role FROM performance_schema.replication_group_members;
+```
+
+## Install MySQL Router
+
+Download and install MySQL Router:
+
+```sh
+wget https://dev.mysql.com/downloads/
+chmod +x mysqlrouter
+mv mysqlrouter /usr/bin/
+```
+
+### Deploy MySQL Router
+
+Use bootstrapping:
+
+```sh
 mysqlrouter --bootstrap mno@mysql-01:3306 --user=root -d mno
-then we have to start MySQL Router using below command,
+```
+
+Start MySQL Router:
+
+```sh
 cd /usr/bin/mno && ./start.sh
-To check it’s started and listening / accepting connections on port 6446.
+```
+
+Check if MySQL Router is listening on port `6446`:
+
+```sh
 netstat -an | grep 6446
-Connect to Database Cluster
-After successfully configuring of MySQL Router, the below command is connected to MySQL Servers/Clusters from the application instance,
+```
+
+## Connect to the Database Cluster
+
+```sh
 mysql -h 127.0.0.1 --port 6446 -u fosstechnix -p
-Note:
-After installing MySQL if you want to set some values for belong to the MYSQL setting you should put the below values in this file.(/etc
-/mysql/my.cnf)
+```
+
+## Additional Configuration
+
+Modify MySQL settings:
+
+```sh
+sudo nano /etc/mysql/my.cnf
+```
+
+Add:
+
+```ini
 [mysqld]
 sql-mode="STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"
-then restart mysql service
+```
+
+Restart MySQL:
+
+```sh
 systemctl restart mysql.service
-Ref:
-https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html#sysvar_lower_case_table_names
-https://www.fosstechnix.com/mysql-innodb-cluster-setup/
-https://bobcares.com/blog/mysql-set-sql_mode-in-my-cnf/
+```
+
+## References
+
+- [MySQL Router Documentation](https://dev.mysql.com/doc/mysql-router/8.0/en/)
+- [MySQL Cluster Setup Guide](https://www.fosstechnix.com/mysql-innodb-cluster-setup/)
+- [MySQL Configuration Guide](https://bobcares.com/blog/mysql-set-sql_mode-in-my-cnf/)
